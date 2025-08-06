@@ -7,7 +7,12 @@ const galleryGrid = document.querySelector(".gallery-grid");
 const modelSelect = document.getElementById("model-select");
 const countSelect = document.getElementById("count-select");
 const ratioSelect = document.getElementById("ratio-select");
-const API_KEY = ""; 
+const modal = document.getElementById("fullscreen-modal");
+const modalImg = document.getElementById("fullscreen-image");
+const closeBtn = document.querySelector(".close-btn");
+
+const API_KEY = "";
+
 // Example prompts
 const examplePrompts = [
   "A magic forest with glowing plants and fairy homes among giant mushrooms",
@@ -68,10 +73,13 @@ const generateImages = async (selectedModel, imageCount, aspectRatio, promptText
   const MODEL_URL = `https://api-inference.huggingface.co/models/${selectedModel}`;
   const { width, height } = getImageDimensions(aspectRatio);
   generateBtn.setAttribute("disabled", "true");
+
+  const startTime = performance.now(); // ⏱️ Start timer
+
   // Create an array of image generation promises
   const imagePromises = Array.from({ length: imageCount }, async (_, i) => {
+    const imgCard = document.getElementById(`img-card-${i}`);
     try {
-      // Send request to the AI model API
       const response = await fetch(MODEL_URL, {
         method: "POST",
         headers: {
@@ -84,20 +92,52 @@ const generateImages = async (selectedModel, imageCount, aspectRatio, promptText
           parameters: { width, height },
         }),
       });
-      if (!response.ok) throw new Error((await response.json())?.error);
-      // Convert response to an image URL and update the image card
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = errorData?.error || "Unknown error occurred";
+
+        // ⚠️ Error handling based on status
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait and try again.");
+        } else if (response.status === 503) {
+          throw new Error("Model is loading or temporarily unavailable.");
+        } else if (response.status === 401 || response.status === 403) {
+          throw new Error("Unauthorized: Check your API key or plan limits.");
+        } else {
+          throw new Error(errorMessage);
+        }
+      }
+
       const blob = await response.blob();
       updateImageCard(i, URL.createObjectURL(blob));
+
     } catch (error) {
-      console.error(error);
-      const imgCard = document.getElementById(`img-card-${i}`);
-      imgCard.classList.replace("loading", "error");
-      imgCard.querySelector(".status-text").textContent = "Generation failed! Check console for more details.";
+      console.error(`❌ Error generating image ${i + 1}:`, error.message);
+      if (imgCard) {
+        imgCard.classList.replace("loading", "error");
+        imgCard.querySelector(".status-text").textContent = `Error: ${error.message}`;
+      }
     }
   });
+
   await Promise.allSettled(imagePromises);
+
+  const endTime = performance.now(); // ⏱️ End timer
+  const duration = ((endTime - startTime) / 1000).toFixed(2);
+
   generateBtn.removeAttribute("disabled");
+
+  //  Show performance result
+const statusBox = document.getElementById("generation-status");
+statusBox.innerHTML = `
+  <p><strong>Generation Time:</strong> ${duration} seconds</p>
+  <p><strong>Images Requested:</strong> ${imageCount}</p>
+  <p><strong>Model:</strong> ${selectedModel}</p>
+`;
+
 };
+
 // Create placeholder cards with loading spinners
 const createImageCards = (selectedModel, imageCount, aspectRatio, promptText) => {
   galleryGrid.innerHTML = "";
@@ -148,5 +188,46 @@ promptBtn.addEventListener("click", () => {
     }
   }, 10); // Speed of typing
 });
+
+document.addEventListener("click", (e) => {
+  if (e.target.classList.contains("result-img")) {
+    modal.style.display = "block";
+    modalImg.src = e.target.src;
+  }
+});
+
+// Close the modal
+closeBtn.onclick = () => {
+  modal.style.display = "none";
+};
+
+// Close on outside click
+modal.onclick = (e) => {
+  if (e.target === modal) {
+    modal.style.display = "none";
+  }
+};
+
+
+
+// Use event delegation to support dynamically loaded images
+document.addEventListener("click", (e) => {
+  // Fullscreen image click
+  if (e.target.classList.contains("result-img")) {
+    modal.style.display = "block";
+    modalImg.src = e.target.src;
+  }
+
+  // Close button click
+  if (e.target.classList.contains("close-btn")) {
+    modal.style.display = "none";
+  }
+
+  // Click outside the image to close modal
+  if (e.target === modal) {
+    modal.style.display = "none";
+  }
+});
+
 themeToggle.addEventListener("click", toggleTheme);
 promptForm.addEventListener("submit", handleFormSubmit);
